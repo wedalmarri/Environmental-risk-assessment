@@ -94,10 +94,7 @@ FACTORS = {
         "Legislation / Compliance",
         {
             1: "In compliance",
-            2: "Minor uncertainty / review needed",
-            3: "Partial non-compliance",
-            4: "Significant non-compliance",
-            5: "Not meeting legislation",
+            2: "Not meeting legislation",
         },
     ),
     "F": (
