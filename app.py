@@ -1,669 +1,617 @@
 
 import io
-from datetime import date
+from datetime import datetime
+from html import escape
 
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-)
-from xml.sax.saxutils import escape
-
-
+# --------------------------------------------------
+# PAGE SETTINGS
+# --------------------------------------------------
 st.set_page_config(
     page_title="Environmental Risk Assessment",
     page_icon="🌿",
-    layout="centered",
-    initial_sidebar_state="collapsed",
+    layout="wide",
 )
 
+# --------------------------------------------------
+# GREEN DESIGN
+# --------------------------------------------------
 st.markdown("""
 <style>
-.block-container {
-    max-width: 1000px;
-    padding-top: 1rem;
-    padding-bottom: 2rem;
+.stApp {
+    background-color: #f5faf5;
 }
-h1 {font-size: 1.8rem !important;}
-div[data-testid="stMetric"] {
-    border: 1px solid rgba(128,128,128,.25);
-    padding: .8rem;
+h1, h2, h3 {
+    color: #176b45;
+}
+div.stButton > button,
+div.stDownloadButton > button {
+    background-color: #176b45;
+    color: white;
+    border-radius: 8px;
+    border: none;
+    min-height: 42px;
+}
+div.stButton > button:hover,
+div.stDownloadButton > button:hover {
+    background-color: #0f5132;
+    color: white;
+}
+.result-card {
+    background-color: white;
+    padding: 20px;
     border-radius: 12px;
-}
-.stButton button, .stDownloadButton button {
-    width: 100%;
-    min-height: 2.8rem;
-    border-radius: 10px;
+    border: 1px solid #d9e8dc;
 }
 </style>
 """, unsafe_allow_html=True)
 
+st.title("🌿 Environmental Risk Assessment")
+st.write(
+    "Evaluate potential environmental impacts, calculate risk scores, "
+    "and generate automatic conclusions for project pollutants."
+)
+
+st.caption(
+    "Screening tool: results depend on the selected criteria and "
+    "the scoring methodology used."
+)
 
 # --------------------------------------------------
-# 1. SCORING CRITERIA
+# CRITERIA AND DROPDOWN OPTIONS
 # --------------------------------------------------
+# Replace these generic names and score descriptions with the
+# exact A-G criteria and scoring definitions from your methodology.
 
-FACTORS = {
-    "A": (
-        "Quantity / Magnitude",
-        {
-            1: "Low",
-            2: "Moderate",
-            3: "High",
-            4: "Very high",
-            5: "Excessive",
-        },
-    ),
-    "B": (
-        "Occurrence / Frequency",
-        {
-            1: "Once a month or less",
-            2: "Once a week",
-            3: "Once a day",
-            4: "Several times a day",
-            5: "Continuous",
-        },
-    ),
-    "C": (
-        "Duration",
-        {
-            1: "Less than 1 year",
-            2: "More than 1 year, less than project life",
-            3: "Greater than project life",
-            4: "Not applicable / validate",
-            5: "Not applicable / validate",
-        },
-    ),
-    "D": (
-        "Scale / Severity",
-        {
-            1: "Localized / minor discomfort",
-            2: "Localized impact or resource consumption",
-            3: "Regional impact to flora, fauna or health",
-            4: "Regional / serious human-health effect",
-            5: "Global scale / potential fatality",
-        },
-    ),
-    "E": (
-        "Legislation / Compliance",
-        {
-            1: "In compliance",
-            2: "Minor uncertainty / review needed",
-            3: "Partial non-compliance",
-            4: "Significant non-compliance",
-            5: "Not meeting legislation",
-        },
-    ),
-    "F": (
-        "Controls and Detection",
-        {
-            1: "Available and effective",
-            2: "Effective but improvements needed",
-            3: "Ineffective controls",
-            4: "Unreliable controls",
-            5: "Absence of control",
-        },
-    ),
-    "G": (
-        "Preventive Mechanism",
-        {
-            1: "Immediately available",
-            2: "Available within 2 hours",
-            3: "Available within 24 hours",
-            4: "Available within a week",
-            5: "More than a week / unavailable",
-        },
-    ),
+CRITERIA = {
+    "A": "Criterion A",
+    "B": "Criterion B",
+    "C": "Criterion C",
+    "D": "Criterion D",
+    "E": "Criterion E",
+    "F": "Criterion F",
+    "G": "Criterion G",
 }
 
-FACTOR_LETTERS = list(FACTORS.keys())
+SCORE_LABELS = {
+    1: "1 — Very low",
+    2: "2 — Low",
+    3: "3 — Moderate",
+    4: "4 — High",
+    5: "5 — Very high",
+}
+
+SCORE_OPTIONS = list(SCORE_LABELS.keys())
 
 
-def calculate_impact(scores):
-    """Calculate H by multiplying A, B, C, D, E, F and G."""
+# --------------------------------------------------
+# RISK CALCULATION AND CONCLUSION
+# --------------------------------------------------
+def calculate_risk(scores):
+    """Multiply the seven criterion scores."""
     result = 1
+    for score in scores:
+        result *= int(score)
+    return result
 
-    for factor in FACTOR_LETTERS:
-        result *= int(scores[factor])
+
+def classify_risk(score):
+    """Classify the calculated impact using the current thresholds."""
+    if score < 25:
+        return (
+            "Low Impact",
+            "The calculated environmental impact is low. "
+            "Maintain existing environmental controls and continue "
+            "routine monitoring.",
+        )
+
+    if score <= 200:
+        return (
+            "Medium Impact",
+            "The calculated environmental impact is medium. "
+            "Review existing controls, consider additional mitigation "
+            "measures, and maintain appropriate monitoring.",
+        )
+
+    return (
+        "High Impact",
+        "The calculated environmental impact is high. "
+        "Prioritize additional mitigation measures and arrange an "
+        "appropriate environmental review before proceeding.",
+    )
+
+
+def make_assessment(pollutant, scores, stage):
+    risk_score = calculate_risk(scores)
+    classification, conclusion = classify_risk(risk_score)
+
+    result = {
+        "Pollutant": pollutant,
+        "Assessment Stage": stage,
+    }
+
+    for factor in CRITERIA:
+        result[factor] = scores[factor]
+
+    result["Risk Score (H)"] = risk_score
+    result["Impact Classification"] = classification
+    result["Conclusion"] = conclusion
 
     return result
 
 
-def classify_impact(score):
-    # Boundary convention: 25 and 200 are Medium.
-    if score < 25:
-        return "Low"
-    elif score <= 200:
-        return "Medium"
-    return "High"
-
-
-def make_summary(pollutants):
-    """Create one results row per pollutant."""
-    rows = []
-
-    for item in pollutants:
-        row = {"Pollutant": item["pollutant"]}
-
-        # Scores before mitigation
-        for factor in FACTOR_LETTERS:
-            row[f"{factor} (Before)"] = item["before"][factor]
-
-        row["H (Before)"] = calculate_impact(item["before"])
-        row["Impact (Before)"] = classify_impact(row["H (Before)"])
-
-        # Scores after mitigation
-        for factor in FACTOR_LETTERS:
-            row[f"{factor} (After)"] = item["after"][factor]
-
-        row["H (After)"] = calculate_impact(item["after"])
-        row["Impact (After)"] = classify_impact(row["H (After)"])
-
-        row["Medium"] = item["medium"]
-        row["Source"] = item["source"]
-
-        rows.append(row)
-
-    return pd.DataFrame(rows)
-
-
 # --------------------------------------------------
-# 2. PDF REPORT
+# SESSION STATE
 # --------------------------------------------------
-
-def build_pdf(project, organization, location, project_type,
-              assessment_date, assessor, summary):
-
-    buffer = io.BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(A4),
-        rightMargin=25,
-        leftMargin=25,
-        topMargin=25,
-        bottomMargin=25,
-    )
-
-    styles = getSampleStyleSheet()
-    styles.add(
-        ParagraphStyle(
-            name="ReportTitle",
-            parent=styles["Title"],
-            alignment=TA_CENTER,
-            fontSize=16,
-            textColor=colors.HexColor("#234b43"),
-        )
-    )
-
-    story = [
-        Paragraph("Environmental Risk Assessment Report",
-                  styles["ReportTitle"]),
-        Spacer(1, 8),
-        Paragraph(
-            "Preliminary screening only. Verify the scoring method "
-            "and project-specific requirements before making decisions.",
-            styles["BodyText"],
-        ),
-        Spacer(1, 12),
-    ]
-
-    details = [
-        ["Project", project, "Project type", project_type],
-        ["Organization", organization or "—",
-         "Location", location or "—"],
-        ["Assessment date", str(assessment_date),
-         "Assessor", assessor or "—"],
-    ]
-
-    detail_table = Table(
-        details,
-        colWidths=[85, 240, 85, 340],
-    )
-    detail_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
-        ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-
-    story.extend([
-        detail_table,
-        Spacer(1, 12),
-        Paragraph("Pollutant impact summary", styles["Heading2"]),
-    ])
-
-    # One line for before mitigation and one for after.
-    data = [[
-        "Pollutant", "Stage", "A", "B", "C", "D", "E", "F", "G",
-        "H", "Impact"
-    ]]
-
-    for _, row in summary.iterrows():
-        for stage in ("Before", "After"):
-            factor_values = [
-                str(row[f"{factor} ({stage})"])
-                for factor in FACTOR_LETTERS
-            ]
-
-            data.append([
-                str(row["Pollutant"])[:30],
-                stage,
-                *factor_values,
-                str(row[f"H ({stage})"]),
-                row[f"Impact ({stage})"],
-            ])
-
-    report_table = Table(
-        data,
-        repeatRows=1,
-        colWidths=[105, 48] + [29] * 7 + [48, 58],
-    )
-
-    report_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#234b43")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-         [colors.white, colors.whitesmoke]),
-    ]))
-
-    story.extend([
-        report_table,
-        Spacer(1, 10),
-        Paragraph(
-            "Formula: H = A × B × C × D × E × F × G",
-            styles["Heading3"],
-        ),
-        Paragraph(
-            "Impact bands used: Low for H < 25; Medium for "
-            "25 ≤ H ≤ 200; High for H > 200. The boundary convention "
-            "for 25 and 200 should be confirmed against the approved "
-            "reference methodology.",
-            styles["BodyText"],
-        ),
-    ])
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer.getvalue()
-
-
-# --------------------------------------------------
-# 3. APP HEADER AND PROJECT DETAILS
-# --------------------------------------------------
-
 if "pollutants" not in st.session_state:
     st.session_state["pollutants"] = []
 
-st.title("🌿 Environmental Risk Assessment")
-st.caption("General-purpose, mobile-friendly EIA screening tool")
-
-st.info(
-    "For preliminary screening only. Verify the scoring rubric, "
-    "factor definitions and risk thresholds for your project."
-)
-
-with st.expander("Scoring formula and impact bands"):
-    st.latex(r"H = A \times B \times C \times D \times E \times F \times G")
-
-    st.markdown("""
-    - **Low:** H < 25
-    - **Medium:** 25 ≤ H ≤ 200
-    - **High:** H > 200
-
-    This implementation treats H = 25 and H = 200 as Medium to close
-    the gaps in the supplied reference. Confirm that convention with
-    your instructor or approved assessment procedure.
-    """)
-
-st.header("1. Project details")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    project = st.text_input(
-        "Project name *",
-        placeholder="Enter your project name",
-    )
-    organization = st.text_input("Organization / client")
-    location = st.text_input("Project location")
-
-with col2:
-    project_type = st.selectbox(
-        "Project type",
-        [
-            "Industrial / chemical",
-            "Oil and gas",
-            "Power / energy",
-            "Construction / infrastructure",
-            "Water / wastewater",
-            "Mining / minerals",
-            "Agriculture",
-            "Transport / logistics",
-            "Manufacturing",
-            "Other",
-        ],
-    )
-    assessment_date = st.date_input(
-        "Assessment date",
-        value=date.today(),
-    )
-    assessor = st.text_input("Assessor")
+if "latest_result" not in st.session_state:
+    st.session_state["latest_result"] = None
 
 
 # --------------------------------------------------
-# 4. ADD POLLUTANTS
+# PROJECT INFORMATION
+# Project Type and Assessor have been removed.
 # --------------------------------------------------
+st.header("1. Project Information")
 
-st.header("2. Add a pollutant")
-st.caption(
-    "Enter one pollutant at a time. Repeat this step to add more "
-    "pollutants to the final summary."
+project_name = st.text_input(
+    "Project Name",
+    placeholder="Enter your project name",
 )
 
-with st.form("pollutant_form", clear_on_submit=True):
+project_location = st.text_input(
+    "Project Location",
+    placeholder="Enter the project location",
+)
+
+project_description = st.text_area(
+    "Project Description",
+    placeholder="Briefly describe the project and its activities",
+)
+
+st.divider()
+
+# --------------------------------------------------
+# POLLUTANT ASSESSMENT
+# --------------------------------------------------
+st.header("2. Pollutant Assessment")
+
+st.write(
+    "Enter one pollutant at a time. Select a score for each criterion "
+    "before and after mitigation. The application calculates both "
+    "scores automatically."
+)
+
+with st.form("pollutant_assessment_form", clear_on_submit=True):
 
     pollutant_name = st.text_input(
-        "Pollutant / environmental aspect *",
-        placeholder="e.g., NH3, CO2, NOx, wastewater",
+        "Pollutant or Environmental Aspect",
+        placeholder="e.g., NOx, wastewater, dust, or noise",
     )
 
-    medium = st.selectbox(
-        "Environmental medium / pathway",
-        [
-            "Air emissions",
-            "Water / wastewater",
-            "Soil / land",
-            "Noise / vibration",
-            "Waste generation",
-            "Resource consumption",
-            "Greenhouse gases",
-            "Accidental release / spill",
-            "Biodiversity / habitat",
-            "Other",
-        ],
-    )
-
-    source = st.text_input(
-        "Source / activity",
-        placeholder="e.g., process vent, pipeline, discharge",
-    )
-
-    receptors = st.text_area(
-        "Potential receptors and impacts",
-        placeholder="Workers, nearby community, aquatic organisms...",
-    )
-
-    scenario = st.text_area(
-        "Scenario / evidence / assumptions",
-        placeholder="Describe the release or environmental impact.",
-    )
-
-    st.subheader("Scores BEFORE mitigation")
-    st.caption("Enter the seven factor ratings from 1 to 5.")
+    st.subheader("Before Mitigation")
 
     before = {}
+    before_columns = st.columns(2)
 
-    for factor, (label, options) in FACTORS.items():
-        before[factor] = st.selectbox(
-            f"{factor}. {label}",
-            options=[1, 2, 3, 4, 5],
-            format_func=lambda value, opts=options:
-                f"{value} — {opts[value]}",
-            key=f"before_{factor}",
-        )
+    for index, (factor, label) in enumerate(CRITERIA.items()):
+        with before_columns[index % 2]:
+            before[factor] = st.selectbox(
+                f"{factor}. {label}",
+                options=SCORE_OPTIONS,
+                format_func=lambda value: SCORE_LABELS.get(
+                    value, str(value)
+                ),
+                key=f"before_{factor}",
+            )
 
-    st.subheader("Scores AFTER mitigation")
-    st.caption(
-        "Enter the expected factor ratings after mitigation measures "
-        "are implemented. Do not automatically assume every factor "
-        "will decrease."
-    )
+    st.subheader("After Mitigation")
 
     after = {}
+    after_columns = st.columns(2)
 
-    for factor, (label, options) in FACTORS.items():
-        after[factor] = st.selectbox(
-            f"{factor}. {label} — after mitigation",
-            options=[1, 2, 3, 4, 5],
-            format_func=lambda value, opts=options:
-                f"{value} — {opts[value]}",
-            key=f"after_{factor}",
-        )
+    for index, (factor, label) in enumerate(CRITERIA.items()):
+        with after_columns[index % 2]:
+            after[factor] = st.selectbox(
+                f"{factor}. {label}",
+                options=SCORE_OPTIONS,
+                format_func=lambda value: SCORE_LABELS.get(
+                    value, str(value)
+                ),
+                key=f"after_{factor}",
+            )
 
-    add_pollutant = st.form_submit_button(
-        "➕ Add pollutant to assessment",
-        type="primary",
+    submitted = st.form_submit_button(
+        "Calculate Environmental Risk",
+        use_container_width=True,
     )
 
-if add_pollutant:
-    if not project.strip():
-        st.error("Please enter the project name first.")
+    if submitted:
+        if not pollutant_name.strip():
+            st.error("Please enter a pollutant or environmental aspect.")
 
-    elif not pollutant_name.strip():
-        st.error("Please enter a pollutant name.")
+        else:
+            before_result = make_assessment(
+                pollutant_name.strip(),
+                before,
+                "Before Mitigation",
+            )
 
-    else:
-        st.session_state["pollutants"].append({
-            "pollutant": pollutant_name.strip(),
-            "medium": medium,
-            "source": source.strip(),
-            "receptors": receptors.strip(),
-            "scenario": scenario.strip(),
-            "before": {k: int(v) for k, v in before.items()},
-            "after": {k: int(v) for k, v in after.items()},
-        })
+            after_result = make_assessment(
+                pollutant_name.strip(),
+                after,
+                "After Mitigation",
+            )
 
-        st.success(
-            f"{pollutant_name.strip()} added to the assessment."
-        )
+            st.session_state["pollutants"].append({
+                "Pollutant": pollutant_name.strip(),
+                "Before Scores": before.copy(),
+                "After Scores": after.copy(),
+                "Before H": before_result["Risk Score (H)"],
+                "Before Classification":
+                    before_result["Impact Classification"],
+                "Before Conclusion": before_result["Conclusion"],
+                "After H": after_result["Risk Score (H)"],
+                "After Classification":
+                    after_result["Impact Classification"],
+                "After Conclusion": after_result["Conclusion"],
+            })
+
+            st.session_state["latest_result"] = {
+                "before": before_result,
+                "after": after_result,
+            }
+
+            st.success(
+                f"Assessment calculated for {pollutant_name.strip()}."
+            )
 
 
 # --------------------------------------------------
-# 5. FINAL POLLUTANT SUMMARY
+# AUTOMATIC RESULTS AND CONCLUSIONS
 # --------------------------------------------------
+latest = st.session_state["latest_result"]
 
-st.header("3. Final pollutant impact summary")
+if latest:
+    st.divider()
+    st.header("3. Assessment Results")
 
-pollutants = st.session_state["pollutants"]
+    before_result = latest["before"]
+    after_result = latest["after"]
 
-if pollutants:
+    result_columns = st.columns(2)
 
-    summary = make_summary(pollutants)
+    for column, result, heading in [
+        (result_columns[0], before_result, "Before Mitigation"),
+        (result_columns[1], after_result, "After Mitigation"),
+    ]:
+        with column:
+            st.subheader(heading)
+            st.metric(
+                "Calculated Risk Score (H)",
+                result["Risk Score (H)"],
+            )
 
-    st.caption(
-        "Each row represents one pollutant. H is calculated by "
-        "multiplying factors A–G separately before and after mitigation."
-    )
+            classification = result["Impact Classification"]
 
-    # Compact view with all pollutants and both H results.
-    display_columns = [
-        "Pollutant",
-        "A (Before)", "B (Before)", "C (Before)",
-        "D (Before)", "E (Before)", "F (Before)", "G (Before)",
-        "H (Before)", "Impact (Before)",
-        "A (After)", "B (After)", "C (After)",
-        "D (After)", "E (After)", "F (After)", "G (After)",
-        "H (After)", "Impact (After)",
-    ]
+            if classification == "Low Impact":
+                st.success(f"🌱 {classification}")
+            elif classification == "Medium Impact":
+                st.warning(f"⚠️ {classification}")
+            else:
+                st.error(f"🚨 {classification}")
+
+            st.write("**Automatic Conclusion**")
+            st.write(result["Conclusion"])
+
+    before_score = before_result["Risk Score (H)"]
+    after_score = after_result["Risk Score (H)"]
+
+    if before_score > 0:
+        reduction = (before_score - after_score) / before_score * 100
+
+        if after_score < before_score:
+            st.info(
+                f"The calculated score decreased by {reduction:.1f}% "
+                "after mitigation. Confirm that the selected scores "
+                "accurately reflect the proposed controls."
+            )
+        elif after_score == before_score:
+            st.info(
+                "The calculated score did not change after mitigation. "
+                "Review whether the proposed measures affect the "
+                "selected criteria."
+            )
+        else:
+            st.warning(
+                "The calculated score increased after mitigation. "
+                "Review the selected scores and proposed controls."
+            )
+
+
+# --------------------------------------------------
+# FINAL SUMMARY TABLE
+# --------------------------------------------------
+st.divider()
+st.header("4. Final Environmental Risk Summary")
+
+records = st.session_state["pollutants"]
+
+if records:
+
+    summary_rows = []
+
+    for item in records:
+        row = {
+            "Pollutant": item["Pollutant"],
+        }
+
+        for factor in CRITERIA:
+            row[f"{factor} Before"] = item["Before Scores"][factor]
+
+        row["H Before"] = item["Before H"]
+        row["Impact Before"] = item["Before Classification"]
+
+        for factor in CRITERIA:
+            row[f"{factor} After"] = item["After Scores"][factor]
+
+        row["H After"] = item["After H"]
+        row["Impact After"] = item["After Classification"]
+        row["Conclusion After"] = item["After Conclusion"]
+
+        summary_rows.append(row)
+
+    summary_df = pd.DataFrame(summary_rows)
 
     st.dataframe(
-        summary[display_columns],
+        summary_df,
         use_container_width=True,
         hide_index=True,
     )
 
-    st.subheader("Impact overview")
+    st.subheader("Impact Overview")
 
-    before_counts = summary["Impact (Before)"].value_counts()
-    after_counts = summary["Impact (After)"].value_counts()
-
-    metric1, metric2, metric3 = st.columns(3)
-
-    metric1.metric("Pollutants assessed", len(summary))
-    metric2.metric(
-        "High before mitigation",
-        int(before_counts.get("High", 0)),
-    )
-    metric3.metric(
-        "High after mitigation",
-        int(after_counts.get("High", 0)),
+    low_count = sum(
+        1 for item in records
+        if item["After Classification"] == "Low Impact"
     )
 
-    # Compare H before and after mitigation.
-    chart_df = summary[
-        ["Pollutant", "H (Before)", "H (After)"]
-    ].set_index("Pollutant")
-
-    st.bar_chart(chart_df)
-
-    st.subheader("Pollutant details")
-
-    selected_pollutant = st.selectbox(
-        "Choose a pollutant to review",
-        options=list(range(len(pollutants))),
-        format_func=lambda index:
-            pollutants[index]["pollutant"],
+    medium_count = sum(
+        1 for item in records
+        if item["After Classification"] == "Medium Impact"
     )
 
-    selected = pollutants[selected_pollutant]
+    high_count = sum(
+        1 for item in records
+        if item["After Classification"] == "High Impact"
+    )
 
-    detail_rows = []
+    metric_columns = st.columns(3)
+    metric_columns[0].metric("Low Impact", low_count)
+    metric_columns[1].metric("Medium Impact", medium_count)
+    metric_columns[2].metric("High Impact", high_count)
 
-    for factor, (label, _) in FACTORS.items():
-        detail_rows.append({
-            "Factor": factor,
-            "Criterion": label,
-            "Before mitigation": selected["before"][factor],
-            "After mitigation": selected["after"][factor],
-        })
+    st.subheader("Download Your Results")
 
-    st.dataframe(
-        pd.DataFrame(detail_rows),
+    csv_data = summary_df.to_csv(index=False).encode("utf-8-sig")
+
+    st.download_button(
+        "📥 Download CSV Summary",
+        data=csv_data,
+        file_name="environmental_risk_assessment.csv",
+        mime="text/csv",
         use_container_width=True,
-        hide_index=True,
     )
 
-    selected_before = calculate_impact(selected["before"])
-    selected_after = calculate_impact(selected["after"])
-
-    left, right = st.columns(2)
-
-    with left:
-        st.metric(
-            "H before mitigation",
-            selected_before,
-        )
-        st.write(
-            "Impact:",
-            classify_impact(selected_before),
-        )
-
-    with right:
-        st.metric(
-            "H after mitigation",
-            selected_after,
-            delta=selected_after - selected_before,
-            delta_color="inverse",
-        )
-        st.write(
-            "Impact:",
-            classify_impact(selected_after),
+    # --------------------------------------------------
+    # PDF REPORT
+    # --------------------------------------------------
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            Table,
+            TableStyle,
         )
 
-    if selected_after > selected_before:
-        st.warning(
-            "The calculated score increased after mitigation. "
-            "Review the factor ratings and mitigation assumptions."
+        pdf_buffer = io.BytesIO()
+
+        pdf_doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=landscape(A4),
+            rightMargin=12 * mm,
+            leftMargin=12 * mm,
+            topMargin=12 * mm,
+            bottomMargin=12 * mm,
         )
 
-    elif selected_after == selected_before:
-        st.info(
-            "The calculated score did not change. Check whether "
-            "the mitigation measures affect any of the seven factors."
+        styles = getSampleStyleSheet()
+
+        title_style = ParagraphStyle(
+            "GreenTitle",
+            parent=styles["Title"],
+            textColor=colors.HexColor("#176b45"),
+            alignment=TA_CENTER,
+            fontSize=18,
+            leading=22,
         )
 
-    else:
-        st.success(
-            "The calculated score decreased after mitigation. "
-            "Verify the revised ratings and supporting evidence."
+        body_style = styles["BodyText"]
+        small_style = ParagraphStyle(
+            "SmallText",
+            parent=body_style,
+            fontSize=7,
+            leading=9,
         )
 
-    st.subheader("Assessment notes")
+        story = [
+            Paragraph(
+                "Environmental Risk Assessment Report",
+                title_style,
+            ),
+            Spacer(1, 8 * mm),
+            Paragraph(
+                f"<b>Project:</b> {escape(project_name or 'Not provided')}",
+                body_style,
+            ),
+            Paragraph(
+                f"<b>Location:</b> "
+                f"{escape(project_location or 'Not provided')}",
+                body_style,
+            ),
+            Paragraph(
+                f"<b>Description:</b> "
+                f"{escape(project_description or 'Not provided')}",
+                body_style,
+            ),
+            Paragraph(
+                f"<b>Report date:</b> {datetime.now().strftime('%Y-%m-%d')}",
+                body_style,
+            ),
+            Spacer(1, 5 * mm),
+            Paragraph(
+                "<b>Calculation:</b> H = A × B × C × D × E × F × G",
+                body_style,
+            ),
+            Paragraph(
+                "Current classification thresholds: Low H &lt; 25; "
+                "Medium 25 ≤ H ≤ 200; High H &gt; 200.",
+                body_style,
+            ),
+            Spacer(1, 5 * mm),
+        ]
 
-    for item in pollutants:
-        with st.expander(
-            f"Notes: {item['pollutant']}"
-        ):
-            st.write("**Source / activity:**", item["source"] or "Not specified")
-            st.write("**Medium:**", item["medium"])
-            st.write(
-                "**Potential receptors and impacts:**",
-                item["receptors"] or "Not specified",
-            )
-            st.write(
-                "**Scenario / evidence:**",
-                item["scenario"] or "Not specified",
-            )
+        pdf_headers = (
+            ["Pollutant", "Stage"]
+            + list(CRITERIA.keys())
+            + ["H", "Impact"]
+        )
 
-    st.subheader("Download results")
+        pdf_data = [pdf_headers]
 
-    csv_data = summary.to_csv(index=False).encode("utf-8-sig")
+        for item in records:
+            for stage, scores_key, score_key, class_key in [
+                (
+                    "Before",
+                    "Before Scores",
+                    "Before H",
+                    "Before Classification",
+                ),
+                (
+                    "After",
+                    "After Scores",
+                    "After H",
+                    "After Classification",
+                ),
+            ]:
+                pdf_data.append(
+                    [
+                        str(item["Pollutant"])[:35],
+                        stage,
+                    ]
+                    + [
+                        str(item[scores_key][factor])
+                        for factor in CRITERIA
+                    ]
+                    + [
+                        str(item[score_key]),
+                        item[class_key],
+                    ]
+                )
 
-    pdf_data = build_pdf(
-        project,
-        organization,
-        location,
-        project_type,
-        assessment_date,
-        assessor,
-        summary,
-    )
+        table = Table(
+            pdf_data,
+            repeatRows=1,
+        )
 
-    download1, download2 = st.columns(2)
+        table.setStyle(TableStyle([
+            (
+                "BACKGROUND",
+                (0, 0),
+                (-1, 0),
+                colors.HexColor("#176b45"),
+            ),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("LEADING", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+                colors.white,
+                colors.HexColor("#f0f7f1"),
+            ]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
 
-    with download1:
+        story.append(table)
+        story.append(Spacer(1, 5 * mm))
+        story.append(Paragraph(
+            "<b>Conclusions after mitigation</b>",
+            body_style,
+        ))
+
+        for item in records:
+            story.append(Paragraph(
+                f"<b>{escape(item['Pollutant'])} — "
+                f"{escape(item['After Classification'])}:</b> "
+                f"{escape(item['After Conclusion'])}",
+                small_style,
+            ))
+            story.append(Spacer(1, 2 * mm))
+
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph(
+            "This report is an automated screening aid. Verify the "
+            "scoring methodology and conclusions with a qualified "
+            "environmental professional.",
+            small_style,
+        ))
+
+        pdf_doc.build(story)
+        pdf_data = pdf_buffer.getvalue()
+
         st.download_button(
-            "📄 Download PDF report",
+            "📄 Download PDF Report",
             data=pdf_data,
             file_name="environmental_risk_assessment.pdf",
             mime="application/pdf",
+            use_container_width=True,
         )
 
-    with download2:
-        st.download_button(
-            "📊 Download full results (CSV)",
-            data=csv_data,
-            file_name="environmental_risk_assessment.csv",
-            mime="text/csv",
+    except ImportError:
+        st.warning(
+            "PDF generation requires the reportlab package. "
+            "The CSV download is available without it."
         )
 
-    if st.button("🗑️ Clear all pollutants"):
+    if st.button("Clear All Pollutants"):
         st.session_state["pollutants"] = []
+        st.session_state["latest_result"] = None
         st.rerun()
 
 else:
     st.info(
-        "No pollutants added yet. Complete the form above and tap "
-        "'Add pollutant to assessment' to start your summary table."
+        "No pollutants have been assessed yet. Complete the dropdown "
+        "menus above and click Calculate Environmental Risk."
     )
-
 
 st.divider()
 
 st.caption(
-    "Environmental Risk Assessment | Preliminary screening tool. "
-    "Results depend on the accuracy of the inputs and the approved "
-    "assessment methodology. High-consequence hazards may require "
-    "specialist assessment regardless of the screening score."
+    "Environmental Risk Assessment | Automated screening results "
+    "do not replace a formal environmental impact assessment."
 )
