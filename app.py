@@ -212,11 +212,9 @@ def build_pdf(project, organization, location, project_type,
     ]
 
     details = [
-        ["Project", project, "Project type", project_type],
-        ["Organization", organization or "—",
-         "Location", location or "—"],
-        ["Assessment date", str(assessment_date),
-         "Assessor", assessor or "—"],
+        ["Project", project],
+        ["Location", location or "—"],
+        ["Assessment date", str(assessment_date)],
     ]
 
     detail_table = Table(
