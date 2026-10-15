@@ -94,7 +94,10 @@ FACTORS = {
         "Legislation / Compliance",
         {
             1: "In compliance",
-            2: "Not meeting legislation",
+            2: "Minor uncertainty / review needed",
+            3: "Partial non-compliance",
+            4: "Significant non-compliance",
+            5: "Not meeting legislation",
         },
     ),
     "F": (
@@ -212,9 +215,11 @@ def build_pdf(project, organization, location, project_type,
     ]
 
     details = [
-        ["Project", project],
-        ["Location", location or "—"],
-        ["Assessment date", str(assessment_date)],
+        ["Project", project, "Project type", project_type],
+        ["Organization", organization or "—",
+         "Location", location or "—"],
+        ["Assessment date", str(assessment_date),
+         "Assessor", assessor or "—"],
     ]
 
     detail_table = Table(
